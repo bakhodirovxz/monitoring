@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% block title %}Boshqaruv — HikCentral Monitor{% endblock %}
+{% block page_title %}<i class="bi bi-gear me-2"></i>Boshqaruv paneli{% endblock %}
+
+{% block content %}
+<ul class="nav nav-tabs mb-3" id="adminTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-branches">
+      <i class="bi bi-building me-1"></i>Filiallar
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-nvrs">
+      <i class="bi bi-hdd-network me-1"></i>NVRlar
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-users">
+      <i class="bi bi-people me-1"></i>Foydalanuvchilar
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+<!-- ── BRANCHES ──────────────────────────────────────────────────────── -->
+<div class="tab-pane fade show active" id="tab-branches">
+  <div class="d-flex gap-2 mb-3">
+    <input type="text" id="new-branch" class="form-control" placeholder="Yangi filial nomi" style="max-width:280px;">
+    <button class="btn btn-primary" onclick="createBranch()">
+      <i class="bi bi-plus-lg me-1"></i>Qo'shish
+    </button>
+  </div>
+  <div class="bg-white rounded shadow-sm">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr><th>ID</th><th>Nomi</th><th>NVR soni</th><th></th></tr>
+      </thead>
+      <tbody id="branch-tbody">
+        {% for b in branches %}
+        <tr id="branch-{{ b.id }}">
+          <td class="text-muted">{{ b.id }}</td>
+          <td class="fw-semibold">{{ b.name }}</td>
+          <td>{{ b.nvrs|length }} ta</td>
+          <td>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteBranch({{ b.id }}, '{{ b.name }}')">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted">Filial yo'q</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── NVRs ──────────────────────────────────────────────────────────── -->
+<div class="tab-pane fade" id="tab-nvrs">
+  <div class="d-flex gap-2 mb-3">
+    <button class="btn btn-outline-secondary" onclick="syncNvrs()">
+      <i class="bi bi-arrow-repeat me-1"></i>HikCentral dan sinxronlash
+    </button>
+    <span id="sync-status" class="text-muted align-self-center" style="font-size:.83rem;"></span>
+  </div>
+  <div class="bg-white rounded shadow-sm overflow-auto">
+    <table class="table mb-0 table-sm">
+      <thead class="table-light">
+        <tr><th>NVR nomi</th><th>IP</th><th>Filial</th><th>Saqlash</th></tr>
+      </thead>
+      <tbody>
+        {% for n in nvrs %}
+        <tr>
+          <td class="fw-semibold">{{ n.name or n.hik_code }}</td>
+          <td><code>{{ n.ip }}</code></td>
+          <td>
+            <select class="form-select form-select-sm" id="nvr-branch-{{ n.id }}"
+                    onchange="assignNvr({{ n.id }})">
+              <option value="">— Tayinlanmagan —</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}" {% if n.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <button class="btn btn-sm btn-primary" onclick="assignNvr({{ n.id }})">
+              <i class="bi bi-check-lg"></i>
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-3">
+          NVR yo'q. "Sinxronlash" tugmasini bosing.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── USERS ──────────────────────────────────────────────────────────── -->
+<div class="tab-pane fade" id="tab-users">
+  <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#modalUser">
+    <i class="bi bi-person-plus me-1"></i>Yangi foydalanuvchi
+  </button>
+  <div class="bg-white rounded shadow-sm overflow-auto">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr><th>Login</th><th>Ism</th><th>Rol</th><th>Filiallar</th><th>Holat</th><th></th></tr>
+      </thead>
+      <tbody id="users-tbody">
+        {% for u in users %}
+        <tr id="user-{{ u.id }}">
+          <td class="fw-semibold">{{ u.username }}</td>
+          <td>{{ u.full_name }}</td>
+          <td>
+            {% if u.role == 'superadmin' %}
+            <span class="badge bg-warning text-dark">Super Admin</span>
+            {% else %}
+            <span class="badge bg-info text-dark">Filial Admin</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.role == 'superadmin' %}
+            <small class="text-muted">Barchasi</small>
+            {% else %}
+            {% for ub in u.user_branches %}
+            <span class="badge bg-light text-dark border">{{ ub.branch.name }}</span>
+            {% else %}<small class="text-muted">Tayinlanmagan</small>
+            {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_active %}
+            <span class="badge bg-success">Faol</span>
+            {% else %}
+            <span class="badge bg-secondary">Bloklangan</span>
+            {% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary me-1"
+                    onclick="editUser({{ u.id }}, '{{ u.username }}', '{{ u.full_name }}', '{{ u.role }}', {{ u.is_active|int }}, [{{ u.user_branches|map(attribute='branch_id')|join(',') }}])">
+              <i class="bi bi-pencil"></i>
+            </button>
+            {% if u.role != 'superadmin' and u.id != user.id %}
+            <button class="btn btn-sm btn-outline-danger"
+                    onclick="deleteUser({{ u.id }}, '{{ u.username }}')">
+              <i class="bi bi-trash"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ── USER MODAL ─────────────────────────────────────────────────────── -->
+<div class="modal fade" id="modalUser" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-user-title">Yangi foydalanuvchi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="u-id" value="">
+        <div class="mb-3">
+          <label class="form-label">Login *</label>
+          <input type="text" id="u-username" class="form-control" placeholder="username">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Parol <small class="text-muted">(tahrirlashda bo'sh qoldirsa o'zgarmaydi)</small></label>
+          <input type="password" id="u-password" class="form-control" placeholder="••••••••">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Ism familiya</label>
+          <input type="text" id="u-fullname" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Rol</label>
+          <select id="u-role" class="form-select" onchange="toggleBranches()">
+            <option value="branch_admin">Filial Admin</option>
+            <option value="superadmin">Super Admin</option>
+          </select>
+        </div>
+        <div id="u-branches-group" class="mb-3">
+          <label class="form-label">Filiallar</label>
+          <div class="dropdown">
+            <button class="form-select text-start d-flex justify-content-between align-items-center"
+                    type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="u-branches-btn">
+              <span id="u-branches-label" class="text-muted">Tanlang...</span>
+              <i class="bi bi-chevron-down text-muted"></i>
+            </button>
+            <div class="dropdown-menu p-2" style="min-width:280px; max-height:240px; overflow:auto;">
+              {% for b in branches %}
+              <div class="form-check">
+                <input class="form-check-input u-branch-cb" type="checkbox" value="{{ b.id }}" id="cb-{{ b.id }}" onchange="updateBranchLabel()">
+                <label class="form-check-label" for="cb-{{ b.id }}">{{ b.name }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="mb-2">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="u-active" checked>
+            <label class="form-check-label">Faol</label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+        <button class="btn btn-primary" onclick="saveUser()">Saqlash</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal = new bootstrap.Modal(document.getElementById('modalUser'));
+
+function toggleBranches() {
+  const isSA = document.getElementById('u-role').value === 'superadmin';
+  document.getElementById('u-branches-group').style.display = isSA ? 'none' : '';
+}
+
+function updateBranchLabel() {
+  const cbs = document.querySelectorAll('.u-branch-cb:checked');
+  const label = document.getElementById('u-branches-label');
+  if (cbs.length === 0) { label.textContent = 'Tanlang...'; label.className = 'text-muted'; }
+  else if (cbs.length <= 2) {
+    label.textContent = Array.from(cbs).map(c => c.parentElement.querySelector('label').textContent).join(', ');
+    label.className = '';
+  } else { label.textContent = cbs.length + ' ta filial tanlandi'; label.className = ''; }
+}
+
+function editUser(id, username, fullname, role, isActive, branchIds) {
+  document.getElementById('modal-user-title').textContent = 'Foydalanuvchini tahrirlash';
+  document.getElementById('u-id').value       = id;
+  document.getElementById('u-username').value = username;
+  document.getElementById('u-username').disabled = true;
+  document.getElementById('u-password').value = '';
+  document.getElementById('u-fullname').value = fullname;
+  document.getElementById('u-role').value     = role;
+  document.getElementById('u-active').checked = !!isActive;
+  document.querySelectorAll('.u-branch-cb').forEach(cb => {
+    cb.checked = branchIds.includes(parseInt(cb.value));
+  });
+  updateBranchLabel();
+  toggleBranches();
+  modal.show();
+}
+
+document.getElementById('modalUser').addEventListener('hidden.bs.modal', () => {
+  document.getElementById('u-id').value = '';
+  document.getElementById('u-username').disabled = false;
+  document.getElementById('u-username').value = '';
+  document.getElementById('u-password').value = '';
+  document.getElementById('u-fullname').value = '';
+  document.getElementById('u-role').value = 'branch_admin';
+  document.getElementById('u-active').checked = true;
+  document.querySelectorAll('.u-branch-cb').forEach(cb => cb.checked = false);
+  document.getElementById('modal-user-title').textContent = 'Yangi foydalanuvchi';
+  toggleBranches();
+});
+
+async function saveUser() {
+  const id     = document.getElementById('u-id').value;
+  const bids   = [...document.querySelectorAll('.u-branch-cb:checked')].map(c => parseInt(c.value));
+  const data   = {
+    username:   document.getElementById('u-username').value,
+    password:   document.getElementById('u-password').value,
+    full_name:  document.getElementById('u-fullname').value,
+    role:       document.getElementById('u-role').value,
+    is_active:  document.getElementById('u-active').checked,
+    branch_ids: bids,
+  };
+  const url    = id ? `/api/users/${id}` : '/api/users';
+  const method = id ? 'PUT' : 'POST';
+  const r      = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  const res    = await r.json();
+  if (!r.ok) { alert(res.detail || 'Xato'); return; }
+  modal.hide();
+  location.reload();
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`"${username}" foydalanuvchini o'chirish?`)) return;
+  const r = await fetch(`/api/users/${id}`, {method:'DELETE'});
+  if (r.ok) document.getElementById(`user-${id}`)?.remove();
+  else { const d = await r.json(); alert(d.detail || 'Xato'); }
+}
+
+async function createBranch() {
+  const name = document.getElementById('new-branch').value.trim();
+  if (!name) return;
+  const r = await fetch('/api/branches', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  const d = await r.json();
+  if (!r.ok) { alert(d.detail || 'Xato'); return; }
+  document.getElementById('new-branch').value = '';
+  location.reload();
+}
+
+async function deleteBranch(id, name) {
+  if (!confirm(`"${name}" filialini o'chirish?`)) return;
+  const r = await fetch(`/api/branches/${id}`, {method:'DELETE'});
+  if (r.ok) { document.getElementById(`branch-${id}`)?.remove(); }
+  else alert('Xato');
+}
+
+async function assignNvr(nvrId) {
+  const sel = document.getElementById(`nvr-branch-${nvrId}`);
+  const bid = sel.value ? parseInt(sel.value) : null;
+  const r   = await fetch(`/api/nvrs/${nvrId}/assign`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({branch_id: bid}),
+  });
+  if (!r.ok) alert('Saqlashda xato');
+  else {
+    sel.classList.add('is-valid');
+    setTimeout(() => sel.classList.remove('is-valid'), 1500);
+  }
+}
+
+async function syncNvrs() {
+  document.getElementById('sync-status').textContent = 'Sinxronlanmoqda...';
+  const r = await fetch('/api/sync-nvrs', {method:'POST'});
+  const d = await r.json();
+  if (r.ok) {
+    document.getElementById('sync-status').textContent = `✓ ${d.count} ta NVR yuklandi`;
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    document.getElementById('sync-status').textContent = 'Xato';
+  }
+}
+
+toggleBranches();
+</script>
+{% endblock %}

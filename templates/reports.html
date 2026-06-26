@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Hisobotlar — HikCentral Monitor{% endblock %}
+{% block page_title %}<i class="bi bi-bar-chart-line me-2"></i>Hisobotlar{% endblock %}
+
+{% block head %}
+<style>
+  .filter-bar { padding: .5rem .8rem; }
+  .filter-bar label { font-size: .7rem; margin-bottom: .15rem; }
+  .filter-bar .form-control, .filter-bar .form-select { font-size: .8rem; padding: .25rem .5rem; }
+  .summary-inline { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+  .summary-inline .badge { font-size: .75rem; padding: .35em .6em; font-weight: 500; }
+  .summary-inline .badge .num { font-weight: 700; font-size: .82rem; }
+  .table-wrap { background:#fff; border-radius:8px; overflow:auto; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .table-wrap table { margin: 0; font-size: .82rem; }
+  .table-wrap thead th { position: sticky; top: 0; z-index: 10; cursor: pointer; user-select: none;
+    white-space: nowrap; padding: .4rem .5rem; font-size: .75rem; }
+  .table-wrap thead th:hover { background: #495057 !important; }
+  .table-wrap tbody td { padding: .3rem .5rem; white-space: nowrap; }
+  th .sort-icon { font-size: .65rem; opacity: .4; }
+  th.sorted .sort-icon { opacity: 1; }
+  .row-offline { background: #fff5f5; }
+  .row-offline:hover { background: #ffe8e8 !important; }
+  .ev-offline { color: #dc3545; font-weight: 600; }
+  .ev-online  { color: #198754; font-weight: 600; }
+  .dur-badge { background: #fef3cd; color: #664d03; border-radius: 3px; padding: .1em .4em; font-size: .72rem; }
+  .dur-badge.long { background: #f8d7da; color: #842029; }
+  .dt-date { color: #6c757d; }
+  .dt-time { font-weight: 500; }
+  #pag-list .page-link { font-size: .78rem; padding: .2rem .5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Compact filter bar -->
+<div class="filter-bar mb-2">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <div>
+      <label>Boshlanish</label>
+      <input type="date" id="f-from" class="form-control form-control-sm">
+    </div>
+    <div>
+      <label>Tugash</label>
+      <input type="date" id="f-to" class="form-control form-control-sm">
+    </div>
+    <div>
+      <label>Filial</label>
+      <select id="f-branch" class="form-select form-select-sm" style="width:140px;" onchange="onBranchChange()">
+        <option value="">Barcha</option>
+        {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>NVR</label>
+      <select id="f-nvr" class="form-select form-select-sm" style="width:150px;">
+        <option value="">Barcha</option>
+      </select>
+    </div>
+    <div>
+      <label>Hodisa</label>
+      <select id="f-type" class="form-select form-select-sm" style="width:100px;">
+        <option value="">Barcha</option>
+        <option value="offline">Offline</option>
+        <option value="online">Online</option>
+      </select>
+    </div>
+    <div>
+      <label>Kamera</label>
+      <input type="text" id="f-search" class="form-control form-control-sm" style="width:140px;" placeholder="qidiruv...">
+    </div>
+    <div class="align-self-end">
+      <button class="btn btn-sm btn-primary" onclick="loadEvents(0)">
+        <i class="bi bi-search"></i> Ko'rish
+      </button>
+    </div>
+    <div class="align-self-end ms-auto d-flex gap-1">
+      <button class="btn btn-sm btn-outline-success" onclick="exportFile('csv')"><i class="bi bi-filetype-csv"></i></button>
+      <button class="btn btn-sm btn-outline-primary" onclick="exportFile('excel')"><i class="bi bi-file-earmark-excel"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- Inline summary badges -->
+<div class="summary-inline" id="summary-row" style="display:none;">
+  <span class="badge bg-light text-dark border"><span class="num" id="sum-total">0</span> ta hodisa</span>
+  <span class="badge bg-danger"><span class="num" id="sum-offline">0</span> ta offline</span>
+  <span class="badge bg-success"><span class="num" id="sum-online">0</span> ta online</span>
+  <span class="badge bg-primary"><span class="num" id="sum-cams">0</span> ta kamera ta'sirlangan</span>
+  <span class="badge bg-warning text-dark"><span class="num" id="sum-total-dur">—</span> jami oflayn vaqt</span>
+  <span class="badge bg-info text-dark"><span class="num" id="sum-avg-dur">—</span> o'rtacha uzilish</span>
+</div>
+
+<!-- Compact table -->
+<div class="table-wrap" style="max-height: calc(100vh - 220px);">
+  <table class="table table-hover table-sm mb-0 align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th data-sort="camera_name">Kamera <i class="bi bi-arrow-down-up sort-icon"></i></th>
+        <th data-sort="camera_ip">IP</th>
+        <th data-sort="branch">Filial</th>
+        <th data-sort="nvr_name">NVR</th>
+        <th data-sort="event_type">Hodisa</th>
+        <th data-sort="started_at">Boshlanish <i class="bi bi-arrow-down-up sort-icon"></i></th>
+        <th data-sort="ended_at">Tugash</th>
+        <th data-sort="duration_sec">Davom. <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      </tr>
+    </thead>
+    <tbody id="events-tbody">
+      <tr><td colspan="8" class="text-center text-muted py-4">Filter tanlang va "Ko'rish" tugmasini bosing</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+<div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted" style="font-size:.75rem;" id="pag-info"></span>
+    <select id="page-size" class="form-select form-select-sm" style="width:auto;font-size:.78rem;" onchange="loadEvents(0)">
+      <option value="50">50</option>
+      <option value="100" selected>100</option>
+      <option value="200">200</option>
+    </select>
+  </div>
+  <nav><ul class="pagination pagination-sm mb-0" id="pag-list"></ul></nav>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 0;
+let sortKey = 'started_at';
+let sortDesc = true;
+let currentData = [];
+
+function fmtDur(sec) {
+  if (!sec) return '—';
+  const s = Math.round(sec);
+  if (s < 60) return s + ' soniya';
+  const m = Math.floor(s/60), r = s%60;
+  if (m < 60) return m + ' daq. ' + r + ' son.';
+  const h = Math.floor(m/60);
+  return h + ' soat ' + (m%60) + ' daq.';
+}
+
+function fmtDT(iso) {
+  if (!iso) return '<span class="text-muted">—</span>';
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('uz-UZ', {day:'2-digit',month:'2-digit'});
+  const time = d.toLocaleTimeString('uz-UZ', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return `<span class="dt-date">${date}</span> <span class="dt-time">${time}</span>`;
+}
+
+async function onBranchChange() {
+  const bid = document.getElementById('f-branch').value;
+  const sel = document.getElementById('f-nvr');
+  sel.innerHTML = '<option value="">Barcha</option>';
+  if (!bid) return;
+  try {
+    const r = await fetch(`/api/branches/${bid}/nvrs`);
+    const d = await r.json();
+    d.nvrs.forEach(n => sel.innerHTML += `<option value="${n.id}">${n.name}</option>`);
+  } catch(e) {}
+}
+
+function sortData() {
+  currentData.sort((a, b) => {
+    let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return sortDesc ? 1 : -1;
+    if (va > vb) return sortDesc ? -1 : 1;
+    return 0;
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('events-tbody');
+  if (!currentData.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Ma\'lumot topilmadi</td></tr>';
+    return;
+  }
+  tbody.innerHTML = currentData.map(e => {
+    const cls = e.event_type === 'offline' ? 'ev-offline' : 'ev-online';
+    const icon = e.event_type === 'offline' ? 'bi-x-circle-fill' : 'bi-check-circle-fill';
+    const rowCls = e.event_type === 'offline' ? 'row-offline' : '';
+    const ds = e.duration_sec || 0;
+    const durCls = ds > 3600 ? 'dur-badge long' : 'dur-badge';
+    const dur = ds ? `<span class="${durCls}">${fmtDur(ds)}</span>` : '—';
+    const ended = e.ended_at ? fmtDT(e.ended_at) : '<span class="text-danger fw-bold">Hozir ham</span>';
+    return `<tr class="${rowCls}">
+      <td class="fw-semibold"><a href="/camera/${e.camera_id||''}" class="text-decoration-none text-dark">${e.camera_name}</a></td>
+      <td><code>${e.camera_ip||'—'}</code></td>
+      <td class="text-muted">${e.branch}</td>
+      <td class="text-muted">${e.nvr_name}</td>
+      <td class="${cls}"><i class="bi ${icon}"></i> ${e.event_type==='offline'?'Off':'On'}</td>
+      <td>${fmtDT(e.started_at)}</td>
+      <td>${ended}</td>
+      <td>${dur}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.sort === sortKey);
+    const icon = th.querySelector('.sort-icon');
+    if (icon) icon.className = `bi ${sortDesc ? 'bi-arrow-down' : 'bi-arrow-up'} sort-icon`;
+  });
+}
+
+async function loadEvents(page = 0) {
+  currentPage = page;
+  const from = document.getElementById('f-from').value;
+  const to = document.getElementById('f-to').value;
+  const branch = document.getElementById('f-branch').value;
+  const nvr = document.getElementById('f-nvr').value;
+  const type = document.getElementById('f-type').value;
+  const search = document.getElementById('f-search').value.trim();
+  const pageSize = parseInt(document.getElementById('page-size').value);
+
+  const p = new URLSearchParams({limit: pageSize, offset: page * pageSize});
+  if (from) p.set('date_from', from);
+  if (to) p.set('date_to', to);
+  if (branch) p.set('branch_id', branch);
+  if (nvr) p.set('nvr_id', nvr);
+  if (type) p.set('event_type', type);
+  if (search) p.set('search', search);
+
+  const tbody = document.getElementById('events-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+
+  try {
+    const r = await fetch('/api/events?' + p.toString());
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">Xato</td></tr>'; return; }
+    const d = await r.json();
+    currentData = d.events || [];
+    const total = d.total || 0;
+
+    document.getElementById('sum-total').textContent = total;
+    document.getElementById('sum-offline').textContent = d.total_offline || 0;
+    document.getElementById('sum-online').textContent = d.total_online || 0;
+    document.getElementById('sum-cams').textContent = d.unique_cameras || 0;
+    document.getElementById('sum-total-dur').textContent = ((d.total_duration_sec||0)/3600).toFixed(1);
+    document.getElementById('sum-avg-dur').textContent = fmtDur(d.avg_duration_sec);
+    document.getElementById('summary-row').style.display = 'flex';
+
+    sortData();
+    renderTable();
+    renderPagination(total, pageSize);
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">Server xatosi</td></tr>';
+  }
+}
+
+function renderPagination(total, pageSize) {
+  const pages = Math.ceil(total / pageSize);
+  const start = total > 0 ? currentPage * pageSize + 1 : 0;
+  const end = Math.min((currentPage + 1) * pageSize, total);
+  document.getElementById('pag-info').textContent = `${start}–${end} / ${total}`;
+
+  const list = document.getElementById('pag-list');
+  list.innerHTML = '';
+  if (pages <= 1) return;
+
+  const add = (label, page, opts = {}) => {
+    const li = document.createElement('li');
+    li.className = `page-item ${opts.active?'active':''} ${opts.disabled?'disabled':''}`;
+    const a = document.createElement('a');
+    a.className = 'page-link'; a.href = '#'; a.innerHTML = label;
+    if (!opts.disabled && !opts.active) a.onclick = e => { e.preventDefault(); loadEvents(page); };
+    li.appendChild(a); list.appendChild(li);
+  };
+
+  add('&laquo;', 0, {disabled: currentPage === 0});
+  let s = Math.max(0, currentPage - 2);
+  let e2 = Math.min(pages - 1, s + 4);
+  if (e2 - s < 4) s = Math.max(0, e2 - 4);
+  if (s > 0) add('1', 0);
+  if (s > 1) add('…', null, {disabled: true});
+  for (let i = s; i <= e2; i++) add(String(i+1), i, {active: i === currentPage});
+  if (e2 < pages - 2) add('…', null, {disabled: true});
+  if (e2 < pages - 1) add(String(pages), pages - 1);
+  add('&raquo;', pages - 1, {disabled: currentPage >= pages - 1});
+}
+
+function exportFile(fmt) {
+  const p = new URLSearchParams();
+  const from = document.getElementById('f-from').value;
+  const to = document.getElementById('f-to').value;
+  const branch = document.getElementById('f-branch').value;
+  const nvr = document.getElementById('f-nvr').value;
+  if (from) p.set('date_from', from);
+  if (to) p.set('date_to', to);
+  if (branch) p.set('branch_id', branch);
+  if (nvr) p.set('nvr_id', nvr);
+  window.location.href = `/api/export/${fmt}?${p.toString()}`;
+}
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) sortDesc = !sortDesc;
+    else { sortKey = key; sortDesc = false; }
+    sortData(); renderTable();
+  });
+});
+
+document.getElementById('f-search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadEvents(0);
+});
+
+const today = new Date().toISOString().slice(0, 10);
+document.getElementById('f-from').value = today;
+document.getElementById('f-to').value = today;
+loadEvents();
+</script>
+{% endblock %}

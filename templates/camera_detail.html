@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}{{ camera.name }} — HikCentral Monitor{% endblock %}
+{% block page_title %}<i class="bi bi-camera-video me-2"></i><span id="cam-title">{{ camera.name }}</span>{% endblock %}
+
+{% block head %}
+<style>
+  .cam-info-card { background:#fff; border-radius:10px; padding:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .cam-info-card .label { font-size:.72rem; color:#6c757d; text-transform:uppercase; letter-spacing:.5px; }
+  .cam-info-card .value { font-size:.88rem; font-weight:500; }
+  .status-online  { color:#198754; }
+  .status-offline { color:#dc3545; }
+  .status-unknown { color:#6c757d; }
+  .event-row { transition:background .1s; }
+  .event-row:hover { background:#f8f9fa; }
+  .chart-bar { display:flex; align-items:flex-end; gap:6px; height:160px; }
+  .chart-bar .bar-item { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; }
+  .chart-bar .bar { width:100%; border-radius:4px 4px 0 0; transition:height .3s; min-height:2px; }
+  .chart-bar .bar-label { font-size:.6rem; color:#6c757d; margin-top:4px; }
+  .chart-bar .bar-val { font-size:.6rem; color:#495057; margin-bottom:2px; }
+  .snap-placeholder {
+    background:#f8f9fa; border:2px dashed #dee2e6; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    min-height:300px; color:#adb5bd; flex-direction:column; gap:.5rem;
+  }
+  .snap-placeholder i { font-size:3rem; }
+  .snap-img { width:100%; border-radius:8px; display:block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- Left: Camera Info + Stats -->
+  <div class="col-lg-4">
+    <div class="cam-info-card">
+      <h6 class="mb-3"><i class="bi bi-info-circle me-2"></i>Kamera ma'lumotlari</h6>
+      <div class="mb-2"><span class="label">Nomi</span> <input type="text" id="cam-name-input" class="form-control form-control-sm mt-1" value="{{ camera.name }}" {% if user.role != 'superadmin' and user.role != 'branch_admin' %}disabled{% endif %}></div>
+      <div class="mb-2"><span class="label">IP manzil</span> <div class="value"><code>{{ camera.channel_ip or '—' }}</code></div></div>
+      <div class="mb-2"><span class="label">HikCentral kodi</span> <div class="value"><code>{{ camera.hik_code }}</code></div></div>
+      <div class="mb-2"><span class="label">NVR</span> <div class="value">{{ nvr.name or nvr.hik_code if nvr else '—' }}</div></div>
+      <div class="mb-2"><span class="label">Filial</span> <div class="value">{{ branch.name if branch else 'Tayinlanmagan' }}</div></div>
+      <div class="mb-2"><span class="label">Holati</span> <div class="value" id="cam-status-value">—</div></div>
+      <div class="mb-2"><span class="label">Oxirgi o'zgarish</span> <div class="value" id="cam-last-change">—</div></div>
+      {% if user.role == 'superadmin' or user.role == 'branch_admin' %}
+      <div class="d-grid mb-2"><button class="btn btn-sm btn-outline-primary" onclick="saveCameraName()"><i class="bi bi-check-lg me-1"></i>Nomni saqlash</button></div>
+      {% endif %}
+      <hr class="my-3">
+      <div class="row g-2 text-center">
+        <div class="col-6">
+          <div style="font-size:1.8rem;font-weight:700;" id="cam-offline-count">—</div>
+          <div class="label">Jami offline</div>
+        </div>
+        <div class="col-6">
+          <div style="font-size:1.8rem;font-weight:700;" id="cam-total-dur">—</div>
+          <div class="label">Offline (soat)</div>
+        </div>
+        <div class="col-12">
+          <div style="font-size:1.2rem;font-weight:700;" id="cam-last-offline">—</div>
+          <div class="label">Oxirgi offline</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Snapshot + Events + Chart -->
+  <div class="col-lg-8">
+    <!-- Snapshot -->
+    <div class="cam-info-card mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0"><i class="bi bi-camera me-2"></i>Snapshot</h6>
+        <div>
+          <span id="snap-time" class="text-muted" style="font-size:.78rem;"></span>
+          <button class="btn btn-sm btn-primary ms-2" id="snap-btn" onclick="refreshSnapshot()">
+            <i class="bi bi-arrow-repeat me-1"></i>Yangilash
+          </button>
+        </div>
+      </div>
+      <div id="snap-container">
+        <div class="snap-placeholder">
+          <i class="bi bi-camera-off"></i>
+          <span>Snapshot yo'q. "Yangilash" tugmasini bosing.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Last Events -->
+    <div class="cam-info-card mb-3">
+      <h6 class="mb-3"><i class="bi bi-clock-history me-2"></i>Oxirgi 10 ta hodisa</h6>
+      <div id="last-events-list" class="text-muted" style="font-size:.82rem;">Yuklanmoqda...</div>
+    </div>
+
+    <!-- Daily Chart -->
+    <div class="cam-info-card">
+      <h6 class="mb-3"><i class="bi bi-graph-up me-2"></i>Kunlik offline davomiyligi</h6>
+      <div id="daily-chart" class="text-center text-muted">Yuklanmoqda...</div>
+    </div>
+  </div>
+</div>
+
+<a href="/dashboard" class="btn btn-sm btn-outline-secondary mt-3">
+  <i class="bi bi-arrow-left me-1"></i>Dashboard'ga qaytish
+</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const camId = {{ camera.id }};
+
+function fmtDur(sec) {
+  if (!sec) return '—';
+  const s = Math.round(sec);
+  if (s < 60) return `${s} son.`;
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return `${m} daq. ${r} son.`;
+  const h = Math.floor(m / 60);
+  return `${h} soat ${m % 60} daq.`;
+}
+
+function fmtDt(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('uz-UZ', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+async function loadDetail() {
+  const r = await fetch(`/api/cameras/${camId}`);
+  const d = await r.json();
+
+  const statusEl = document.getElementById('cam-status-value');
+  if (d.status === 1) { statusEl.innerHTML = '<span class="status-online"><i class="bi bi-check-circle-fill me-1"></i>Online</span>'; }
+  else if (d.status === 2) { statusEl.innerHTML = '<span class="status-offline"><i class="bi bi-x-circle-fill me-1"></i>Offline</span>'; }
+  else { statusEl.innerHTML = '<span class="status-unknown"><i class="bi bi-dash-circle me-1"></i>Noma\'lum</span>'; }
+
+  document.getElementById('cam-last-change').textContent = fmtDt(d.last_status_change);
+  document.getElementById('cam-offline-count').textContent = d.offline_count || 0;
+
+  const events = d.last_events || [];
+  let html = '';
+  events.forEach(e => {
+    const icon = e.event_type === 'offline' ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '<i class="bi bi-check-circle-fill text-success"></i>';
+    const dur = e.duration_sec ? ` (${fmtDur(e.duration_sec)})` : '';
+    html += `<div class="event-row d-flex justify-content-between py-1 border-bottom">
+      <span>${icon} ${e.event_type === 'offline' ? 'Offline' : 'Online'} ${dur}</span>
+      <span class="text-muted">${fmtDt(e.started_at)}</span>
+    </div>`;
+  });
+  if (!html) html = '<div class="text-muted">Hodisa topilmadi</div>';
+  document.getElementById('last-events-list').innerHTML = html;
+
+  if (events.length > 0 && events[0].event_type === 'offline' && !events[0].ended_at) {
+    document.getElementById('cam-last-offline').innerHTML = '<span class="text-danger">Hozir ham offline</span>';
+  } else {
+    document.getElementById('cam-last-offline').textContent = events.length > 0 ? fmtDt(events[0].started_at) : '—';
+  }
+}
+
+async function loadDailyStats() {
+  const r = await fetch(`/api/cameras/${camId}/daily-stats`);
+  const d = await r.json();
+  const daily = d.daily || [];
+  const chart = document.getElementById('daily-chart');
+
+  if (daily.length === 0) {
+    chart.innerHTML = '<div class="text-muted py-4">Ma\'lumot topilmadi</div>';
+    return;
+  }
+
+  const maxSec = Math.max(...daily.map(d => d.total_sec), 1);
+  let totalAll = 0;
+  daily.forEach(d => totalAll += d.total_sec);
+  document.getElementById('cam-total-dur').textContent = (totalAll / 3600).toFixed(1);
+
+  let html = '<div class="chart-bar">';
+  daily.forEach(d => {
+    const pct = Math.max(2, (d.total_sec / maxSec) * 100);
+    const color = d.total_sec > 0 ? '#dc3545' : '#e9ecef';
+    const label = d.day.slice(5);
+    html += `<div class="bar-item">
+      <div class="bar-val">${d.total_sec > 0 ? fmtDur(d.total_sec) : ''}</div>
+      <div class="bar" style="height:${pct}%;background:${color};"></div>
+      <div class="bar-label">${label}</div>
+    </div>`;
+  });
+  html += '</div>';
+  chart.innerHTML = html;
+}
+
+async function loadSnapshot() {
+  const r = await fetch(`/api/cameras/${camId}/snapshot`);
+  const d = await r.json();
+  const container = document.getElementById('snap-container');
+  if (d.has_snapshot && d.url) {
+    container.innerHTML = `<img src="${d.url}" class="snap-img" alt="Snapshot">`;
+  } else {
+    container.innerHTML = `<div class="snap-placeholder">
+      <i class="bi bi-camera-off"></i>
+      <span>Snapshot yo'q. "Yangilash" tugmasini bosing.</span>
+    </div>`;
+  }
+}
+
+async function refreshSnapshot() {
+  const btn = document.getElementById('snap-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Olinmoqda...';
+  try {
+    const r = await fetch(`/api/cameras/${camId}/snapshot/refresh`, {method: 'POST'});
+    if (!r.ok) {
+      const d = await r.json();
+      alert(d.detail || 'Snapshot olinmadi');
+      return;
+    }
+    const d = await r.json();
+    document.getElementById('snap-container').innerHTML = `<img src="${d.url}" class="snap-img" alt="Snapshot">`;
+    document.getElementById('snap-time').textContent = 'Yangilandi: ' + new Date().toLocaleTimeString('uz-UZ');
+  } catch(e) {
+    alert('Server xatosi');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Yangilash';
+  }
+}
+
+function saveCameraName() {
+  const name = document.getElementById('cam-name-input').value.trim();
+  if (!name) return;
+  fetch(`/api/cameras/${camId}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name}),
+  }).then(r => { if (r.ok) { document.getElementById('cam-title').textContent = name; alert('Saqlandi'); } });
+}
+
+loadDetail();
+loadDailyStats();
+loadSnapshot();
+</script>
+{% endblock %}

@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — HikCentral Monitor{% endblock %}
+{% block page_title %}<i class="bi bi-grid-3x3-gap me-2"></i>Dashboard{% endblock %}
+
+{% block head %}
+<style>
+  .cam-name { font-weight: 600; font-size: .9rem; }
+  .cam-ip   { font-size: .78rem; color: #6c757d; font-family: monospace; }
+  .cam-meta { font-size: .75rem; color: #adb5bd; }
+  .cam-branch-badge {
+    font-size: .7rem; padding: .15em .5em;
+    background: #e9ecef; color: #495057;
+    border-radius: 4px; white-space: nowrap;
+  }
+  #cam-grid { transition: opacity .2s; }
+  .dot-blink { animation: blink 1.5s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stats -->
+<div class="row g-3 mb-3" id="stats-row">
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:#1a5276;">
+      <i class="bi bi-camera-video"></i>
+      <div><div class="val" id="s-total">—</div><div class="lbl">Jami kamera</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:#198754;">
+      <i class="bi bi-check-circle"></i>
+      <div><div class="val" id="s-online">—</div><div class="lbl">Online</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:#dc3545;">
+      <i class="bi bi-x-circle dot-blink"></i>
+      <div><div class="val" id="s-offline">—</div><div class="lbl">Offline</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="background:#0d6efd;">
+      <i class="bi bi-hdd-network"></i>
+      <div><div class="val" id="s-nvr">—</div><div class="lbl">NVR soni</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar d-flex align-items-center gap-2 flex-wrap">
+  <button class="btn btn-sm btn-outline-secondary" onclick="resetFilters()" title="Filterni tozalash">
+    <i class="bi bi-x-lg"></i>
+  </button>
+  <select id="f-branch" class="form-select form-select-sm" style="max-width:200px;">
+    <option value="">Barcha filiallar</option>
+    {% for b in branches %}
+    <option value="{{ b.id }}">{{ b.name }}</option>
+    {% endfor %}
+  </select>
+  <select id="f-nvr" class="form-select form-select-sm" style="max-width:200px; display:none;">
+    <option value="">Barcha NVR</option>
+  </select>
+  <select id="f-status" class="form-select form-select-sm" style="max-width:160px;">
+    <option value="">Barcha holat</option>
+    <option value="1">Online</option>
+    <option value="2">Offline</option>
+  </select>
+  <input id="f-search" type="text" class="form-control form-control-sm" style="max-width:200px;" placeholder="Kamera nomi...">
+  <div class="ms-auto d-flex align-items-center gap-2">
+    <span class="text-muted" style="font-size:.75rem;">
+      <i class="bi bi-arrow-clockwise"></i> <span id="countdown">15</span>s
+    </span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="manualRefresh()">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Camera grid -->
+<div id="cam-grid"></div>
+
+<!-- Pagination -->
+<div class="d-flex align-items-center justify-content-between mt-2" id="pagination-bar" style="display:none!important;">
+  <span id="pag-info" class="text-muted" style="font-size:.82rem;"></span>
+  <nav>
+    <ul class="pagination pagination-sm mb-0" id="pag-list"></ul>
+  </nav>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PAGE_SIZE = 50;
+let allCameras  = [];
+let filtered    = [];
+let currentPage = 0;
+let timer       = 15;
+
+function statusClass(s) {
+  return s === 1 ? 'online' : s === 2 ? 'offline' : 'unknown';
+}
+function statusLabel(s) {
+  if (s === 1) return '<span class="badge-status status-online"><i class="bi bi-check-circle-fill me-1"></i>Online</span>';
+  if (s === 2) return '<span class="badge-status status-offline"><i class="bi bi-x-circle-fill me-1"></i>Offline</span>';
+  return '<span class="badge-status status-unknown"><i class="bi bi-dash-circle me-1"></i>Noma\'lum</span>';
+}
+function offlineDur(ts) {
+  if (!ts) return '';
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
+  if (diff < 60) return diff + ' son.';
+  const m = Math.floor(diff / 60), r = diff % 60;
+  if (m < 60) return m + ' daq. ' + r + ' son.';
+  return Math.floor(m / 60) + ' soat ' + (m % 60) + ' daq.';
+}
+
+// Offline kameralar tepada (eng yangi offline = birinchi), keyin online
+function sortCameras(list) {
+  return list.slice().sort((a, b) => {
+    if (a.status === 2 && b.status !== 2) return -1;
+    if (a.status !== 2 && b.status === 2) return  1;
+    if (a.status === 2 && b.status === 2) {
+      // Eng yangi offline birinchi (DESC)
+      const ta = a.offline_since ? new Date(a.offline_since).getTime() : 0;
+      const tb = b.offline_since ? new Date(b.offline_since).getTime() : 0;
+      return tb - ta;
+    }
+    return 0;
+  });
+}
+
+// statsSet: status filtersiz hisoblash (branch/NVR/qidiruv ta'sir qiladi)
+function updateStats(statsSet) {
+  const online  = statsSet.filter(c => c.status === 1).length;
+  const offline = statsSet.filter(c => c.status === 2).length;
+  const nvrs    = new Set(statsSet.map(c => c.nvr_id || c.nvr_name).filter(n => n)).size;
+  document.getElementById('s-total').textContent   = statsSet.length;
+  document.getElementById('s-online').textContent  = online;
+  document.getElementById('s-offline').textContent = offline;
+  document.getElementById('s-nvr').textContent     = nvrs;
+}
+
+// NVR dropdown: branch tanlanganda to'ldirish, yo'q bo'lsa yashirish
+function populateNvrFilter() {
+  const sel    = document.getElementById('f-nvr');
+  const branch = document.getElementById('f-branch').value;
+  if (!branch) {
+    sel.style.display = 'none';
+    sel.value = '';
+    return;
+  }
+  // nvr_name ni kalit sifatida ishlatamiz (nvr_id yo'q bo'lgan holatda ham ishlaydi)
+  const seen = new Map();
+  allCameras.forEach(c => {
+    if (c.nvr_name) seen.set(c.nvr_name, c.nvr_name);
+  });
+  sel.innerHTML = '<option value="">Barcha NVR</option>';
+  [...seen.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .forEach(name => {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      sel.appendChild(o);
+    });
+  sel.style.display = seen.size >= 1 ? '' : 'none';
+}
+
+// resetPage=true faqat filter o'zgarganda; auto-refresh false yuboradi
+function applyFilters(resetPage = true) {
+  const statusFilter = document.getElementById('f-status').value;
+  const nvrFilter    = document.getElementById('f-nvr').value;
+  const search       = document.getElementById('f-search').value.toLowerCase();
+  // statsSet: holat filteri ta'sir qilmaydi
+  const statsSet = allCameras.filter(c =>
+    (!nvrFilter || c.nvr_name === nvrFilter) &&
+    (!search    || c.name.toLowerCase().includes(search))
+  );
+  // filtered: barcha filterlar (gridda ko'rsatish uchun)
+  filtered = sortCameras(
+    allCameras.filter(c =>
+      (!statusFilter || String(c.status) === statusFilter) &&
+      (!nvrFilter    || c.nvr_name       === nvrFilter) &&
+      (!search       || c.name.toLowerCase().includes(search))
+    )
+  );
+  if (resetPage) currentPage = 0;
+  updateStats(statsSet);
+  renderGrid();
+}
+
+function resetFilters() {
+  document.getElementById('f-branch').value = '';
+  document.getElementById('f-nvr').value    = '';
+  document.getElementById('f-nvr').style.display = 'none';
+  document.getElementById('f-status').value = '';
+  document.getElementById('f-search').value = '';
+  loadCameras(true);
+}
+
+function renderGrid() {
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const start      = currentPage * PAGE_SIZE;
+  const page       = filtered.slice(start, start + PAGE_SIZE);
+  const showBranch = !document.getElementById('f-branch').value;
+
+  let html = '';
+  page.forEach(c => {
+    const sc    = statusClass(c.status);
+    const since = c.status === 2
+      ? '<div class="offline-since"><i class="bi bi-clock"></i> ' + offlineDur(c.offline_since) + ' dan beri offline</div>'
+      : '';
+    const branchBadge = showBranch && c.branch
+      ? '<span class="cam-branch-badge ms-2">' + c.branch + '</span>'
+      : '';
+    html += '<div class="cam-card ' + sc + '">' +
+              '<div class="d-flex align-items-center justify-content-between">' +
+                '<div>' +
+                  '<div class="cam-name"><a href="/camera/' + c.id + '" class="text-decoration-none text-dark">' + c.name + '</a>' + branchBadge + '</div>' +
+                  '<span class="cam-ip">' + (c.ip || '—') + '</span>' +
+                  '<span class="cam-meta ms-2">' + c.nvr_name + '</span>' +
+                  since +
+                '</div>' +
+                '<div>' + statusLabel(c.status) + '</div>' +
+              '</div>' +
+            '</div>';
+  });
+  if (!html) html = '<div class="text-center text-muted py-5"><i class="bi bi-camera-video-off" style="font-size:2rem;"></i><div class="mt-2">Kamera topilmadi</div></div>';
+  document.getElementById('cam-grid').innerHTML = html;
+
+  // Pagination bar
+  const bar = document.getElementById('pagination-bar');
+  if (filtered.length <= PAGE_SIZE) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.removeProperty('display');
+
+  const from = start + 1;
+  const to   = Math.min(start + PAGE_SIZE, filtered.length);
+  document.getElementById('pag-info').textContent =
+    from + '–' + to + ' / ' + filtered.length + ' ta kamera';
+
+  // Page buttons (show max 7 page numbers)
+  const list  = document.getElementById('pag-list');
+  list.innerHTML = '';
+
+  function btn(label, page, disabled, active) {
+    const li = document.createElement('li');
+    li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+    const a = document.createElement('a');
+    a.className = 'page-link';
+    a.href = '#';
+    a.innerHTML = label;
+    if (!disabled && !active) a.onclick = e => { e.preventDefault(); goPage(page); };
+    li.appendChild(a);
+    list.appendChild(li);
+  }
+
+  btn('&laquo;', currentPage - 1, currentPage === 0);
+
+  let startP = Math.max(0, currentPage - 3);
+  let endP   = Math.min(totalPages - 1, startP + 6);
+  if (endP - startP < 6) startP = Math.max(0, endP - 6);
+
+  if (startP > 0)            btn('1', 0);
+  if (startP > 1)            btn('…', null, true);
+  for (let i = startP; i <= endP; i++) btn(i + 1, i, false, i === currentPage);
+  if (endP < totalPages - 2) btn('…', null, true);
+  if (endP < totalPages - 1) btn(totalPages, totalPages - 1);
+
+  btn('&raquo;', currentPage + 1, currentPage === totalPages - 1);
+}
+
+function goPage(page) {
+  currentPage = page;
+  renderGrid();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+async function loadLastUpdate() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    if (d.last_update) {
+      const dt = new Date(d.last_update);
+      document.getElementById('last-update').textContent =
+        'Yangilandi: ' + dt.toLocaleTimeString('uz-UZ');
+    }
+  } catch(e) {}
+}
+
+// resetPage: faqat filial o'zgarganda true, auto-refresh da false
+async function loadCameras(resetPage = false) {
+  const branch = document.getElementById('f-branch').value;
+  const url    = branch ? '/api/cameras?branch_id=' + branch : '/api/cameras';
+  const r      = await fetch(url);
+  const d      = await r.json();
+  allCameras   = d.cameras || [];
+  populateNvrFilter();
+  applyFilters(resetPage);
+}
+
+async function loadAll() {
+  // auto-refresh: sahifani qayta qo'ymaymiz (false)
+  await Promise.all([loadLastUpdate(), loadCameras(false)]);
+  resetTimer();
+}
+
+function manualRefresh() {
+  loadAll();
+}
+
+function resetTimer() {
+  timer = 15;
+  document.getElementById('countdown').textContent = timer;
+}
+
+document.getElementById('f-branch').addEventListener('change', () => loadCameras(true));
+document.getElementById('f-nvr').addEventListener('change',    () => applyFilters(true));
+document.getElementById('f-status').addEventListener('input',  () => applyFilters(true));
+document.getElementById('f-search').addEventListener('input',  () => applyFilters(true));
+
+loadCameras(true);
+loadLastUpdate();
+setInterval(() => {
+  timer--;
+  document.getElementById('countdown').textContent = timer;
+  if (timer <= 0) loadAll();
+}, 1000);
+</script>
+{% endblock %}

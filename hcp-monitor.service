@@ -1,0 +1,14 @@
+[Unit]
+Description=HCP Monitor (FastAPI/Uvicorn)
+After=network.target mysqld.service
+
+[Service]
+User=www
+WorkingDirectory=/www/wwwroot/monitoring.static.uz
+EnvironmentFile=/www/wwwroot/monitoring.static.uz/.env
+ExecStart=/usr/bin/python3 -m uvicorn app:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
