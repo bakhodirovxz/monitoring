@@ -1,9 +1,29 @@
+<?php
+/**
+ * Asosiy layout. Sahifa template'lari quyidagi o'zgaruvchilarni belgilaydi:
+ *   $title        — sahifa sarlavhasi (ixtiyoriy)
+ *   $page_title   — topbar sarlavhasi (HTML, ixtiyoriy)
+ *   $head_html    — qo'shimcha <head> (ixtiyoriy)
+ *   $content_html — asosiy kontent (HTML)
+ *   $scripts_html — sahifa skriptlari (ixtiyoriy)
+ *   $user         — joriy foydalanuvchi (ixtiyoriy)
+ *
+ * Va shu fayilni require qiladi.
+ */
+$title        = $title        ?? 'HikCentral Monitor';
+$page_title   = $page_title   ?? '';
+$head_html    = $head_html    ?? '';
+$content_html = $content_html ?? '';
+$scripts_html = $scripts_html ?? '';
+$user         = $user         ?? null;
+$cur          = $__current_path ?? '';
+?>
 <!DOCTYPE html>
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}HikCentral Monitor{% endblock %}</title>
+  <title><?= e($title) ?></title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <style>
@@ -82,57 +102,57 @@
       #main { margin-left: 0; }
     }
   </style>
-  {% block head %}{% endblock %}
+  <?= $head_html ?>
 </head>
 <body>
 
-{% if user is defined and user %}
+<?php if ($user): ?>
 <div id="sidebar">
   <div class="brand"><i class="bi bi-camera-video-fill"></i> HCP Monitor</div>
   <nav class="mt-2">
-    <a href="/dashboard" class="{% if request.url.path == '/dashboard' %}active{% endif %}">
+    <a href="/dashboard" class="<?= $cur === '/dashboard' ? 'active' : '' ?>">
       <i class="bi bi-grid-3x3-gap"></i> Dashboard
     </a>
-    <a href="/reports" class="{% if request.url.path == '/reports' %}active{% endif %}">
+    <a href="/reports" class="<?= $cur === '/reports' ? 'active' : '' ?>">
       <i class="bi bi-bar-chart-line"></i> Hisobotlar
     </a>
-    {% if user.role == 'superadmin' %}
-    <a href="/admin" class="{% if request.url.path == '/admin' %}active{% endif %}">
+    <?php if ($user['role'] === 'superadmin'): ?>
+    <a href="/admin" class="<?= $cur === '/admin' ? 'active' : '' ?>">
       <i class="bi bi-gear"></i> Boshqaruv
     </a>
-    {% elif user.role == 'branch_admin' %}
-    <a href="/manage" class="{% if request.url.path == '/manage' %}active{% endif %}">
+    <?php elseif ($user['role'] === 'branch_admin'): ?>
+    <a href="/manage" class="<?= $cur === '/manage' ? 'active' : '' ?>">
       <i class="bi bi-gear"></i> Boshqaruv
     </a>
-    {% endif %}
+    <?php endif; ?>
   </nav>
   <div class="sidebar-footer">
     <i class="bi bi-person-circle"></i>
-    {{ user.full_name or user.username }}
-    {% if user.role == 'superadmin' %}
+    <?= e($user['full_name'] ?: $user['username']) ?>
+    <?php if ($user['role'] === 'superadmin'): ?>
     <span class="badge bg-warning text-dark" style="font-size:.65rem;">Admin</span>
-    {% endif %}
+    <?php endif; ?>
     <br>
     <a href="/logout" class="text-white-50 text-decoration-none" style="font-size:.75rem;">
       <i class="bi bi-box-arrow-right"></i> Chiqish
     </a>
   </div>
 </div>
-{% endif %}
+<?php endif; ?>
 
 <div id="main">
-  {% if user is defined and user %}
+  <?php if ($user): ?>
   <div id="topbar">
-    <span class="page-title">{% block page_title %}{% endblock %}</span>
+    <span class="page-title"><?= $page_title ?></span>
     <span id="last-update" class="text-muted" style="font-size:.78rem;"></span>
   </div>
-  {% endif %}
+  <?php endif; ?>
   <div class="content">
-    {% block content %}{% endblock %}
+    <?= $content_html ?>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-{% block scripts %}{% endblock %}
+<?= $scripts_html ?>
 </body>
 </html>

@@ -1,8 +1,12 @@
-{% extends "base.html" %}
-{% block title %}Boshqaruv — HikCentral Monitor{% endblock %}
-{% block page_title %}<i class="bi bi-gear me-2"></i>Boshqaruv paneli{% endblock %}
+<?php
+/** @var array $user */
+/** @var array $branches  each: id,name,nvr_count */
+/** @var array $users      each: id,username,full_name,role,is_active,branches[],branch_ids[] */
+/** @var array $nvrs       each: id,name,hik_code,ip,branch_id */
+$title      = 'Boshqaruv — HikCentral Monitor';
+$page_title = '<i class="bi bi-gear me-2"></i>Boshqaruv paneli';
 
-{% block content %}
+ob_start(); ?>
 <ul class="nav nav-tabs mb-3" id="adminTabs">
   <li class="nav-item">
     <a class="nav-link active" data-bs-toggle="tab" href="#tab-branches">
@@ -23,7 +27,7 @@
 
 <div class="tab-content">
 
-<!-- ── BRANCHES ──────────────────────────────────────────────────────── -->
+<!-- ── BRANCHES ── -->
 <div class="tab-pane fade show active" id="tab-branches">
   <div class="d-flex gap-2 mb-3">
     <input type="text" id="new-branch" class="form-control" placeholder="Yangi filial nomi" style="max-width:280px;">
@@ -37,26 +41,26 @@
         <tr><th>ID</th><th>Nomi</th><th>NVR soni</th><th></th></tr>
       </thead>
       <tbody id="branch-tbody">
-        {% for b in branches %}
-        <tr id="branch-{{ b.id }}">
-          <td class="text-muted">{{ b.id }}</td>
-          <td class="fw-semibold">{{ b.name }}</td>
-          <td>{{ b.nvrs|length }} ta</td>
+        <?php if ($branches): foreach ($branches as $b): ?>
+        <tr id="branch-<?= (int) $b['id'] ?>">
+          <td class="text-muted"><?= (int) $b['id'] ?></td>
+          <td class="fw-semibold"><?= e($b['name']) ?></td>
+          <td><?= (int) $b['nvr_count'] ?> ta</td>
           <td>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteBranch({{ b.id }}, '{{ b.name }}')">
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteBranch(<?= (int) $b['id'] ?>, '<?= e(addslashes($b['name'])) ?>')">
               <i class="bi bi-trash"></i>
             </button>
           </td>
         </tr>
-        {% else %}
+        <?php endforeach; else: ?>
         <tr><td colspan="4" class="text-center text-muted">Filial yo'q</td></tr>
-        {% endfor %}
+        <?php endif; ?>
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- ── NVRs ──────────────────────────────────────────────────────────── -->
+<!-- ── NVRs ── -->
 <div class="tab-pane fade" id="tab-nvrs">
   <div class="d-flex gap-2 mb-3">
     <button class="btn btn-outline-secondary" onclick="syncNvrs()">
@@ -70,36 +74,36 @@
         <tr><th>NVR nomi</th><th>IP</th><th>Filial</th><th>Saqlash</th></tr>
       </thead>
       <tbody>
-        {% for n in nvrs %}
+        <?php if ($nvrs): foreach ($nvrs as $n): ?>
         <tr>
-          <td class="fw-semibold">{{ n.name or n.hik_code }}</td>
-          <td><code>{{ n.ip }}</code></td>
+          <td class="fw-semibold"><?= e($n['name'] !== '' ? $n['name'] : $n['hik_code']) ?></td>
+          <td><code><?= e($n['ip']) ?></code></td>
           <td>
-            <select class="form-select form-select-sm" id="nvr-branch-{{ n.id }}"
-                    onchange="assignNvr({{ n.id }})">
+            <select class="form-select form-select-sm" id="nvr-branch-<?= (int) $n['id'] ?>"
+                    onchange="assignNvr(<?= (int) $n['id'] ?>)">
               <option value="">— Tayinlanmagan —</option>
-              {% for b in branches %}
-              <option value="{{ b.id }}" {% if n.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
-              {% endfor %}
+              <?php foreach ($branches as $b): ?>
+              <option value="<?= (int) $b['id'] ?>" <?= ((int) $n['branch_id'] === (int) $b['id']) ? 'selected' : '' ?>><?= e($b['name']) ?></option>
+              <?php endforeach; ?>
             </select>
           </td>
           <td>
-            <button class="btn btn-sm btn-primary" onclick="assignNvr({{ n.id }})">
+            <button class="btn btn-sm btn-primary" onclick="assignNvr(<?= (int) $n['id'] ?>)">
               <i class="bi bi-check-lg"></i>
             </button>
           </td>
         </tr>
-        {% else %}
+        <?php endforeach; else: ?>
         <tr><td colspan="4" class="text-center text-muted py-3">
           NVR yo'q. "Sinxronlash" tugmasini bosing.
         </td></tr>
-        {% endfor %}
+        <?php endif; ?>
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- ── USERS ──────────────────────────────────────────────────────────── -->
+<!-- ── USERS ── -->
 <div class="tab-pane fade" id="tab-users">
   <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#modalUser">
     <i class="bi bi-person-plus me-1"></i>Yangi foydalanuvchi
@@ -110,55 +114,54 @@
         <tr><th>Login</th><th>Ism</th><th>Rol</th><th>Filiallar</th><th>Holat</th><th></th></tr>
       </thead>
       <tbody id="users-tbody">
-        {% for u in users %}
-        <tr id="user-{{ u.id }}">
-          <td class="fw-semibold">{{ u.username }}</td>
-          <td>{{ u.full_name }}</td>
+        <?php foreach ($users as $u): ?>
+        <tr id="user-<?= (int) $u['id'] ?>">
+          <td class="fw-semibold"><?= e($u['username']) ?></td>
+          <td><?= e($u['full_name']) ?></td>
           <td>
-            {% if u.role == 'superadmin' %}
+            <?php if ($u['role'] === 'superadmin'): ?>
             <span class="badge bg-warning text-dark">Super Admin</span>
-            {% else %}
+            <?php else: ?>
             <span class="badge bg-info text-dark">Filial Admin</span>
-            {% endif %}
+            <?php endif; ?>
           </td>
           <td>
-            {% if u.role == 'superadmin' %}
+            <?php if ($u['role'] === 'superadmin'): ?>
             <small class="text-muted">Barchasi</small>
-            {% else %}
-            {% for ub in u.user_branches %}
-            <span class="badge bg-light text-dark border">{{ ub.branch.name }}</span>
-            {% else %}<small class="text-muted">Tayinlanmagan</small>
-            {% endfor %}
-            {% endif %}
+            <?php elseif ($u['branches']): foreach ($u['branches'] as $ub): ?>
+            <span class="badge bg-light text-dark border"><?= e($ub['name']) ?></span>
+            <?php endforeach; else: ?>
+            <small class="text-muted">Tayinlanmagan</small>
+            <?php endif; ?>
           </td>
           <td>
-            {% if u.is_active %}
+            <?php if ($u['is_active']): ?>
             <span class="badge bg-success">Faol</span>
-            {% else %}
+            <?php else: ?>
             <span class="badge bg-secondary">Bloklangan</span>
-            {% endif %}
+            <?php endif; ?>
           </td>
           <td>
             <button class="btn btn-sm btn-outline-primary me-1"
-                    onclick="editUser({{ u.id }}, '{{ u.username }}', '{{ u.full_name }}', '{{ u.role }}', {{ u.is_active|int }}, [{{ u.user_branches|map(attribute='branch_id')|join(',') }}])">
+                    onclick="editUser(<?= (int) $u['id'] ?>, '<?= e(addslashes($u['username'])) ?>', '<?= e(addslashes($u['full_name'])) ?>', '<?= e($u['role']) ?>', <?= (int) $u['is_active'] ?>, [<?= implode(',', $u['branch_ids']) ?>])">
               <i class="bi bi-pencil"></i>
             </button>
-            {% if u.role != 'superadmin' and u.id != user.id %}
+            <?php if ($u['role'] !== 'superadmin' && (int) $u['id'] !== (int) $user['id']): ?>
             <button class="btn btn-sm btn-outline-danger"
-                    onclick="deleteUser({{ u.id }}, '{{ u.username }}')">
+                    onclick="deleteUser(<?= (int) $u['id'] ?>, '<?= e(addslashes($u['username'])) ?>')">
               <i class="bi bi-trash"></i>
             </button>
-            {% endif %}
+            <?php endif; ?>
           </td>
         </tr>
-        {% endfor %}
+        <?php endforeach; ?>
       </tbody>
     </table>
   </div>
 </div>
 </div>
 
-<!-- ── USER MODAL ─────────────────────────────────────────────────────── -->
+<!-- ── USER MODAL ── -->
 <div class="modal fade" id="modalUser" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -196,12 +199,12 @@
               <i class="bi bi-chevron-down text-muted"></i>
             </button>
             <div class="dropdown-menu p-2" style="min-width:280px; max-height:240px; overflow:auto;">
-              {% for b in branches %}
+              <?php foreach ($branches as $b): ?>
               <div class="form-check">
-                <input class="form-check-input u-branch-cb" type="checkbox" value="{{ b.id }}" id="cb-{{ b.id }}" onchange="updateBranchLabel()">
-                <label class="form-check-label" for="cb-{{ b.id }}">{{ b.name }}</label>
+                <input class="form-check-input u-branch-cb" type="checkbox" value="<?= (int) $b['id'] ?>" id="cb-<?= (int) $b['id'] ?>" onchange="updateBranchLabel()">
+                <label class="form-check-label" for="cb-<?= (int) $b['id'] ?>"><?= e($b['name']) ?></label>
               </div>
-              {% endfor %}
+              <?php endforeach; ?>
             </div>
           </div>
         </div>
@@ -219,9 +222,9 @@
     </div>
   </div>
 </div>
-{% endblock %}
+<?php $content_html = ob_get_clean();
 
-{% block scripts %}
+ob_start(); ?>
 <script>
 const modal = new bootstrap.Modal(document.getElementById('modalUser'));
 
@@ -343,4 +346,5 @@ async function syncNvrs() {
 
 toggleBranches();
 </script>
-{% endblock %}
+<?php $scripts_html = ob_get_clean();
+require __DIR__ . '/_layout.php';

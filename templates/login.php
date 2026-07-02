@@ -1,3 +1,4 @@
+<?php /** @var string|null $error */ ?>
 <!DOCTYPE html>
 <html lang="uz">
 <head>
@@ -22,9 +23,9 @@
     <div class="login-title">HikCentral Monitor</div>
     <div class="login-sub">Kamera monitoringi tizimi</div>
 
-    {% if error %}
-    <div class="alert alert-danger py-2" style="font-size:.85rem;">{{ error }}</div>
-    {% endif %}
+    <?php if (!empty($error)): ?>
+    <div class="alert alert-danger py-2" style="font-size:.85rem;"><?= e($error) ?></div>
+    <?php endif; ?>
 
     <form method="post" action="/login">
       <div class="mb-3 text-start">

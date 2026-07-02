@@ -1,8 +1,13 @@
-{% extends "base.html" %}
-{% block title %}{{ camera.name }} — HikCentral Monitor{% endblock %}
-{% block page_title %}<i class="bi bi-camera-video me-2"></i><span id="cam-title">{{ camera.name }}</span>{% endblock %}
+<?php
+/** @var array $user */
+/** @var array $camera   id,name,channel_ip,hik_code */
+/** @var array|null $nvr name,hik_code */
+/** @var array|null $branch name */
+$title      = e($camera['name']) . ' — HikCentral Monitor';
+$page_title = '<i class="bi bi-camera-video me-2"></i><span id="cam-title">' . e($camera['name']) . '</span>';
+$can_edit   = in_array($user['role'], ['superadmin', 'branch_admin'], true);
 
-{% block head %}
+ob_start(); ?>
 <style>
   .cam-info-card { background:#fff; border-radius:10px; padding:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .cam-info-card .label { font-size:.72rem; color:#6c757d; text-transform:uppercase; letter-spacing:.5px; }
@@ -25,24 +30,24 @@
   .snap-placeholder i { font-size:3rem; }
   .snap-img { width:100%; border-radius:8px; display:block; }
 </style>
-{% endblock %}
+<?php $head_html = ob_get_clean();
 
-{% block content %}
+ob_start(); ?>
 <div class="row g-3">
   <!-- Left: Camera Info + Stats -->
   <div class="col-lg-4">
     <div class="cam-info-card">
       <h6 class="mb-3"><i class="bi bi-info-circle me-2"></i>Kamera ma'lumotlari</h6>
-      <div class="mb-2"><span class="label">Nomi</span> <input type="text" id="cam-name-input" class="form-control form-control-sm mt-1" value="{{ camera.name }}" {% if user.role != 'superadmin' and user.role != 'branch_admin' %}disabled{% endif %}></div>
-      <div class="mb-2"><span class="label">IP manzil</span> <div class="value"><code>{{ camera.channel_ip or '—' }}</code></div></div>
-      <div class="mb-2"><span class="label">HikCentral kodi</span> <div class="value"><code>{{ camera.hik_code }}</code></div></div>
-      <div class="mb-2"><span class="label">NVR</span> <div class="value">{{ nvr.name or nvr.hik_code if nvr else '—' }}</div></div>
-      <div class="mb-2"><span class="label">Filial</span> <div class="value">{{ branch.name if branch else 'Tayinlanmagan' }}</div></div>
+      <div class="mb-2"><span class="label">Nomi</span> <input type="text" id="cam-name-input" class="form-control form-control-sm mt-1" value="<?= e($camera['name']) ?>" <?= $can_edit ? '' : 'disabled' ?>></div>
+      <div class="mb-2"><span class="label">IP manzil</span> <div class="value"><code><?= e($camera['channel_ip'] ?: '—') ?></code></div></div>
+      <div class="mb-2"><span class="label">HikCentral kodi</span> <div class="value"><code><?= e($camera['hik_code']) ?></code></div></div>
+      <div class="mb-2"><span class="label">NVR</span> <div class="value"><?= $nvr ? e($nvr['name'] !== '' ? $nvr['name'] : $nvr['hik_code']) : '—' ?></div></div>
+      <div class="mb-2"><span class="label">Filial</span> <div class="value"><?= $branch ? e($branch['name']) : 'Tayinlanmagan' ?></div></div>
       <div class="mb-2"><span class="label">Holati</span> <div class="value" id="cam-status-value">—</div></div>
       <div class="mb-2"><span class="label">Oxirgi o'zgarish</span> <div class="value" id="cam-last-change">—</div></div>
-      {% if user.role == 'superadmin' or user.role == 'branch_admin' %}
+      <?php if ($can_edit): ?>
       <div class="d-grid mb-2"><button class="btn btn-sm btn-outline-primary" onclick="saveCameraName()"><i class="bi bi-check-lg me-1"></i>Nomni saqlash</button></div>
-      {% endif %}
+      <?php endif; ?>
       <hr class="my-3">
       <div class="row g-2 text-center">
         <div class="col-6">
@@ -99,11 +104,11 @@
 <a href="/dashboard" class="btn btn-sm btn-outline-secondary mt-3">
   <i class="bi bi-arrow-left me-1"></i>Dashboard'ga qaytish
 </a>
-{% endblock %}
+<?php $content_html = ob_get_clean();
 
-{% block scripts %}
+ob_start(); ?>
 <script>
-const camId = {{ camera.id }};
+const camId = <?= (int) $camera['id'] ?>;
 
 function fmtDur(sec) {
   if (!sec) return '—';
@@ -134,12 +139,12 @@ async function loadDetail() {
 
   const events = d.last_events || [];
   let html = '';
-  events.forEach(e => {
-    const icon = e.event_type === 'offline' ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '<i class="bi bi-check-circle-fill text-success"></i>';
-    const dur = e.duration_sec ? ` (${fmtDur(e.duration_sec)})` : '';
+  events.forEach(ev => {
+    const icon = ev.event_type === 'offline' ? '<i class="bi bi-x-circle-fill text-danger"></i>' : '<i class="bi bi-check-circle-fill text-success"></i>';
+    const dur = ev.duration_sec ? ` (${fmtDur(ev.duration_sec)})` : '';
     html += `<div class="event-row d-flex justify-content-between py-1 border-bottom">
-      <span>${icon} ${e.event_type === 'offline' ? 'Offline' : 'Online'} ${dur}</span>
-      <span class="text-muted">${fmtDt(e.started_at)}</span>
+      <span>${icon} ${ev.event_type === 'offline' ? 'Offline' : 'Online'} ${dur}</span>
+      <span class="text-muted">${fmtDt(ev.started_at)}</span>
     </div>`;
   });
   if (!html) html = '<div class="text-muted">Hodisa topilmadi</div>';
@@ -163,18 +168,18 @@ async function loadDailyStats() {
     return;
   }
 
-  const maxSec = Math.max(...daily.map(d => d.total_sec), 1);
+  const maxSec = Math.max(...daily.map(x => x.total_sec), 1);
   let totalAll = 0;
-  daily.forEach(d => totalAll += d.total_sec);
+  daily.forEach(x => totalAll += x.total_sec);
   document.getElementById('cam-total-dur').textContent = (totalAll / 3600).toFixed(1);
 
   let html = '<div class="chart-bar">';
-  daily.forEach(d => {
-    const pct = Math.max(2, (d.total_sec / maxSec) * 100);
-    const color = d.total_sec > 0 ? '#dc3545' : '#e9ecef';
-    const label = d.day.slice(5);
+  daily.forEach(x => {
+    const pct = Math.max(2, (x.total_sec / maxSec) * 100);
+    const color = x.total_sec > 0 ? '#dc3545' : '#e9ecef';
+    const label = x.day.slice(5);
     html += `<div class="bar-item">
-      <div class="bar-val">${d.total_sec > 0 ? fmtDur(d.total_sec) : ''}</div>
+      <div class="bar-val">${x.total_sec > 0 ? fmtDur(x.total_sec) : ''}</div>
       <div class="bar" style="height:${pct}%;background:${color};"></div>
       <div class="bar-label">${label}</div>
     </div>`;
@@ -233,4 +238,5 @@ loadDetail();
 loadDailyStats();
 loadSnapshot();
 </script>
-{% endblock %}
+<?php $scripts_html = ob_get_clean();
+require __DIR__ . '/_layout.php';

@@ -1,8 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Dashboard — HikCentral Monitor{% endblock %}
-{% block page_title %}<i class="bi bi-grid-3x3-gap me-2"></i>Dashboard{% endblock %}
+<?php
+/** @var array $user */
+/** @var array $branches */
+$title      = 'Dashboard — HikCentral Monitor';
+$page_title = '<i class="bi bi-grid-3x3-gap me-2"></i>Dashboard';
 
-{% block head %}
+ob_start(); ?>
 <style>
   .cam-name { font-weight: 600; font-size: .9rem; }
   .cam-ip   { font-size: .78rem; color: #6c757d; font-family: monospace; }
@@ -16,9 +18,9 @@
   .dot-blink { animation: blink 1.5s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 </style>
-{% endblock %}
+<?php $head_html = ob_get_clean();
 
-{% block content %}
+ob_start(); ?>
 <!-- Stats -->
 <div class="row g-3 mb-3" id="stats-row">
   <div class="col-6 col-md-3">
@@ -54,9 +56,9 @@
   </button>
   <select id="f-branch" class="form-select form-select-sm" style="max-width:200px;">
     <option value="">Barcha filiallar</option>
-    {% for b in branches %}
-    <option value="{{ b.id }}">{{ b.name }}</option>
-    {% endfor %}
+    <?php foreach ($branches as $b): ?>
+    <option value="<?= (int) $b['id'] ?>"><?= e($b['name']) ?></option>
+    <?php endforeach; ?>
   </select>
   <select id="f-nvr" class="form-select form-select-sm" style="max-width:200px; display:none;">
     <option value="">Barcha NVR</option>
@@ -87,9 +89,9 @@
     <ul class="pagination pagination-sm mb-0" id="pag-list"></ul>
   </nav>
 </div>
-{% endblock %}
+<?php $content_html = ob_get_clean();
 
-{% block scripts %}
+ob_start(); ?>
 <script>
 const PAGE_SIZE = 50;
 let allCameras  = [];
@@ -120,7 +122,6 @@ function sortCameras(list) {
     if (a.status === 2 && b.status !== 2) return -1;
     if (a.status !== 2 && b.status === 2) return  1;
     if (a.status === 2 && b.status === 2) {
-      // Eng yangi offline birinchi (DESC)
       const ta = a.offline_since ? new Date(a.offline_since).getTime() : 0;
       const tb = b.offline_since ? new Date(b.offline_since).getTime() : 0;
       return tb - ta;
@@ -129,18 +130,16 @@ function sortCameras(list) {
   });
 }
 
-// statsSet: status filtersiz hisoblash (branch/NVR/qidiruv ta'sir qiladi)
 function updateStats(statsSet) {
   const online  = statsSet.filter(c => c.status === 1).length;
   const offline = statsSet.filter(c => c.status === 2).length;
-  const nvrs    = new Set(statsSet.map(c => c.nvr_id || c.nvr_name).filter(n => n)).size;
+  const nvrs    = new Set(statsSet.map(c => c.nvr_id).filter(id => id != null)).size;
   document.getElementById('s-total').textContent   = statsSet.length;
   document.getElementById('s-online').textContent  = online;
   document.getElementById('s-offline').textContent = offline;
   document.getElementById('s-nvr').textContent     = nvrs;
 }
 
-// NVR dropdown: branch tanlanganda to'ldirish, yo'q bo'lsa yashirish
 function populateNvrFilter() {
   const sel    = document.getElementById('f-nvr');
   const branch = document.getElementById('f-branch').value;
@@ -149,7 +148,6 @@ function populateNvrFilter() {
     sel.value = '';
     return;
   }
-  // nvr_name ni kalit sifatida ishlatamiz (nvr_id yo'q bo'lgan holatda ham ishlaydi)
   const seen = new Map();
   allCameras.forEach(c => {
     if (c.nvr_name) seen.set(c.nvr_name, c.nvr_name);
@@ -165,17 +163,14 @@ function populateNvrFilter() {
   sel.style.display = seen.size >= 1 ? '' : 'none';
 }
 
-// resetPage=true faqat filter o'zgarganda; auto-refresh false yuboradi
 function applyFilters(resetPage = true) {
   const statusFilter = document.getElementById('f-status').value;
   const nvrFilter    = document.getElementById('f-nvr').value;
   const search       = document.getElementById('f-search').value.toLowerCase();
-  // statsSet: holat filteri ta'sir qilmaydi
   const statsSet = allCameras.filter(c =>
     (!nvrFilter || c.nvr_name === nvrFilter) &&
     (!search    || c.name.toLowerCase().includes(search))
   );
-  // filtered: barcha filterlar (gridda ko'rsatish uchun)
   filtered = sortCameras(
     allCameras.filter(c =>
       (!statusFilter || String(c.status) === statusFilter) &&
@@ -227,7 +222,6 @@ function renderGrid() {
   if (!html) html = '<div class="text-center text-muted py-5"><i class="bi bi-camera-video-off" style="font-size:2rem;"></i><div class="mt-2">Kamera topilmadi</div></div>';
   document.getElementById('cam-grid').innerHTML = html;
 
-  // Pagination bar
   const bar = document.getElementById('pagination-bar');
   if (filtered.length <= PAGE_SIZE) {
     bar.style.display = 'none';
@@ -240,7 +234,6 @@ function renderGrid() {
   document.getElementById('pag-info').textContent =
     from + '–' + to + ' / ' + filtered.length + ' ta kamera';
 
-  // Page buttons (show max 7 page numbers)
   const list  = document.getElementById('pag-list');
   list.innerHTML = '';
 
@@ -289,21 +282,29 @@ async function loadLastUpdate() {
   } catch(e) {}
 }
 
-// resetPage: faqat filial o'zgarganda true, auto-refresh da false
 async function loadCameras(resetPage = false) {
   const branch = document.getElementById('f-branch').value;
   const url    = branch ? '/api/cameras?branch_id=' + branch : '/api/cameras';
-  const r      = await fetch(url);
-  const d      = await r.json();
-  allCameras   = d.cameras || [];
-  populateNvrFilter();
-  applyFilters(resetPage);
+  try {
+    const r    = await fetch(url);
+    if (!r.ok) return;
+    const d    = await r.json();
+    allCameras = d.cameras || [];
+    populateNvrFilter();
+    applyFilters(resetPage);
+  } catch (e) {
+    // Tarmoq xatosi — avto-yangilanish to'xtamasligi uchun yutamiz
+  }
 }
 
 async function loadAll() {
-  // auto-refresh: sahifani qayta qo'ymaymiz (false)
-  await Promise.all([loadLastUpdate(), loadCameras(false)]);
-  resetTimer();
+  // resetTimer() ni finally'ga qo'yamiz: bitta so'rov xato bersa ham
+  // countdown qayta boshlanadi va avto-yangilanish to'xtab qolmaydi.
+  try {
+    await Promise.all([loadLastUpdate(), loadCameras(false)]);
+  } finally {
+    resetTimer();
+  }
 }
 
 function manualRefresh() {
@@ -322,10 +323,17 @@ document.getElementById('f-search').addEventListener('input',  () => applyFilter
 
 loadCameras(true);
 loadLastUpdate();
+
+let refreshing = false;
 setInterval(() => {
+  if (refreshing) return;            // yangilanish davom etar ekan, sanamaymiz
   timer--;
-  document.getElementById('countdown').textContent = timer;
-  if (timer <= 0) loadAll();
+  document.getElementById('countdown').textContent = Math.max(0, timer);
+  if (timer <= 0) {
+    refreshing = true;
+    loadAll().finally(() => { refreshing = false; });
+  }
 }, 1000);
 </script>
-{% endblock %}
+<?php $scripts_html = ob_get_clean();
+require __DIR__ . '/_layout.php';

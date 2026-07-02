@@ -1,5 +1,5 @@
 -- ============================================================
---  HCP Monitor — MySQL schema (Python/FastAPI)
+--  HCP Monitor — MySQL schema (PHP 8 + PDO)
 --  Ishlatish: mysql -u root -p < schema.sql
 -- ============================================================
 

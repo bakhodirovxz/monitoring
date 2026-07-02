@@ -1,8 +1,10 @@
-{% extends "base.html" %}
-{% block title %}Hisobotlar — HikCentral Monitor{% endblock %}
-{% block page_title %}<i class="bi bi-bar-chart-line me-2"></i>Hisobotlar{% endblock %}
+<?php
+/** @var array $user */
+/** @var array $branches */
+$title      = 'Hisobotlar — HikCentral Monitor';
+$page_title = '<i class="bi bi-bar-chart-line me-2"></i>Hisobotlar';
 
-{% block head %}
+ob_start(); ?>
 <style>
   .filter-bar { padding: .5rem .8rem; }
   .filter-bar label { font-size: .7rem; margin-bottom: .15rem; }
@@ -28,9 +30,9 @@
   .dt-time { font-weight: 500; }
   #pag-list .page-link { font-size: .78rem; padding: .2rem .5rem; }
 </style>
-{% endblock %}
+<?php $head_html = ob_get_clean();
 
-{% block content %}
+ob_start(); ?>
 <!-- Compact filter bar -->
 <div class="filter-bar mb-2">
   <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -46,7 +48,7 @@
       <label>Filial</label>
       <select id="f-branch" class="form-select form-select-sm" style="width:140px;" onchange="onBranchChange()">
         <option value="">Barcha</option>
-        {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        <?php foreach ($branches as $b): ?><option value="<?= (int) $b['id'] ?>"><?= e($b['name']) ?></option><?php endforeach; ?>
       </select>
     </div>
     <div>
@@ -122,9 +124,9 @@
   </div>
   <nav><ul class="pagination pagination-sm mb-0" id="pag-list"></ul></nav>
 </div>
-{% endblock %}
+<?php $content_html = ob_get_clean();
 
-{% block scripts %}
+ob_start(); ?>
 <script>
 let currentPage = 0;
 let sortKey = 'started_at';
@@ -161,38 +163,27 @@ async function onBranchChange() {
   } catch(e) {}
 }
 
-function sortData() {
-  currentData.sort((a, b) => {
-    let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
-    if (typeof va === 'string') va = va.toLowerCase();
-    if (typeof vb === 'string') vb = vb.toLowerCase();
-    if (va < vb) return sortDesc ? 1 : -1;
-    if (va > vb) return sortDesc ? -1 : 1;
-    return 0;
-  });
-}
-
 function renderTable() {
   const tbody = document.getElementById('events-tbody');
   if (!currentData.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Ma\'lumot topilmadi</td></tr>';
     return;
   }
-  tbody.innerHTML = currentData.map(e => {
-    const cls = e.event_type === 'offline' ? 'ev-offline' : 'ev-online';
-    const icon = e.event_type === 'offline' ? 'bi-x-circle-fill' : 'bi-check-circle-fill';
-    const rowCls = e.event_type === 'offline' ? 'row-offline' : '';
-    const ds = e.duration_sec || 0;
+  tbody.innerHTML = currentData.map(ev => {
+    const cls = ev.event_type === 'offline' ? 'ev-offline' : 'ev-online';
+    const icon = ev.event_type === 'offline' ? 'bi-x-circle-fill' : 'bi-check-circle-fill';
+    const rowCls = ev.event_type === 'offline' ? 'row-offline' : '';
+    const ds = ev.duration_sec || 0;
     const durCls = ds > 3600 ? 'dur-badge long' : 'dur-badge';
     const dur = ds ? `<span class="${durCls}">${fmtDur(ds)}</span>` : '—';
-    const ended = e.ended_at ? fmtDT(e.ended_at) : '<span class="text-danger fw-bold">Hozir ham</span>';
+    const ended = ev.ended_at ? fmtDT(ev.ended_at) : '<span class="text-danger fw-bold">Hozir ham</span>';
     return `<tr class="${rowCls}">
-      <td class="fw-semibold"><a href="/camera/${e.camera_id||''}" class="text-decoration-none text-dark">${e.camera_name}</a></td>
-      <td><code>${e.camera_ip||'—'}</code></td>
-      <td class="text-muted">${e.branch}</td>
-      <td class="text-muted">${e.nvr_name}</td>
-      <td class="${cls}"><i class="bi ${icon}"></i> ${e.event_type==='offline'?'Off':'On'}</td>
-      <td>${fmtDT(e.started_at)}</td>
+      <td class="fw-semibold"><a href="/camera/${ev.camera_id||''}" class="text-decoration-none text-dark">${ev.camera_name}</a></td>
+      <td><code>${ev.camera_ip||'—'}</code></td>
+      <td class="text-muted">${ev.branch}</td>
+      <td class="text-muted">${ev.nvr_name}</td>
+      <td class="${cls}"><i class="bi ${icon}"></i> ${ev.event_type==='offline'?'Off':'On'}</td>
+      <td>${fmtDT(ev.started_at)}</td>
       <td>${ended}</td>
       <td>${dur}</td>
     </tr>`;
@@ -216,6 +207,8 @@ async function loadEvents(page = 0) {
   const pageSize = parseInt(document.getElementById('page-size').value);
 
   const p = new URLSearchParams({limit: pageSize, offset: page * pageSize});
+  p.set('sort', sortKey);
+  p.set('dir', sortDesc ? 'desc' : 'asc');
   if (from) p.set('date_from', from);
   if (to) p.set('date_to', to);
   if (branch) p.set('branch_id', branch);
@@ -241,7 +234,6 @@ async function loadEvents(page = 0) {
     document.getElementById('sum-avg-dur').textContent = fmtDur(d.avg_duration_sec);
     document.getElementById('summary-row').style.display = 'flex';
 
-    sortData();
     renderTable();
     renderPagination(total, pageSize);
   } catch(e) {
@@ -298,7 +290,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     const key = th.dataset.sort;
     if (sortKey === key) sortDesc = !sortDesc;
     else { sortKey = key; sortDesc = false; }
-    sortData(); renderTable();
+    loadEvents(0);   // serverdan butun natija bo'yicha saralab qayta yuklash
   });
 });
 
@@ -311,4 +303,5 @@ document.getElementById('f-from').value = today;
 document.getElementById('f-to').value = today;
 loadEvents();
 </script>
-{% endblock %}
+<?php $scripts_html = ob_get_clean();
+require __DIR__ . '/_layout.php';

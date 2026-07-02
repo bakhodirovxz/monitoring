@@ -1,14 +1,18 @@
-{% extends "base.html" %}
-{% block title %}Boshqaruv — HikCentral Monitor{% endblock %}
-{% block page_title %}<i class="bi bi-gear me-2"></i>Boshqaruv paneli{% endblock %}
+<?php
+/** @var array $user */
+/** @var array $branches */
+/** @var array $nvrs */
+/** @var array $managed_users  each: id,username,full_name,is_active,branches[],nvrs[] */
+$title      = 'Boshqaruv — HikCentral Monitor';
+$page_title = '<i class="bi bi-gear me-2"></i>Boshqaruv paneli';
 
-{% block head %}
+ob_start(); ?>
 <style>
   .manage-card { background:#fff; border-radius:10px; padding:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.06); margin-bottom:1rem; }
 </style>
-{% endblock %}
+<?php $head_html = ob_get_clean();
 
-{% block content %}
+ob_start(); ?>
 <ul class="nav nav-tabs mb-3" id="manageTabs">
   <li class="nav-item">
     <a class="nav-link active" data-bs-toggle="tab" href="#tab-nvrs">
@@ -24,38 +28,38 @@
 
 <div class="tab-content">
 
-<!-- ── NVR va KAMERALAR ──────────────────────────────────────────────── -->
+<!-- ── NVR va KAMERALAR ── -->
 <div class="tab-pane fade show active" id="tab-nvrs">
-  {% for n in nvrs %}
+  <?php if ($nvrs): foreach ($nvrs as $n): ?>
   <div class="manage-card">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="mb-0">
         <i class="bi bi-hdd-network me-2 text-primary"></i>
-        <input type="text" class="form-control form-control-sm d-inline-block" id="nvr-name-{{ n.id }}"
-               value="{{ n.name or n.hik_code }}" style="max-width:300px;">
+        <input type="text" class="form-control form-control-sm d-inline-block" id="nvr-name-<?= (int) $n['id'] ?>"
+               value="<?= e($n['name'] !== '' ? $n['name'] : $n['hik_code']) ?>" style="max-width:300px;">
       </h6>
       <div>
-        <code>{{ n.ip }}</code>
-        <button class="btn btn-sm btn-outline-primary ms-2" onclick="saveNvrName({{ n.id }})">
+        <code><?= e($n['ip']) ?></code>
+        <button class="btn btn-sm btn-outline-primary ms-2" onclick="saveNvrName(<?= (int) $n['id'] ?>)">
           <i class="bi bi-check-lg"></i>
         </button>
       </div>
     </div>
     <div class="ms-2">
-      <button class="btn btn-sm btn-outline-secondary" onclick="toggleCameras({{ n.id }})">
+      <button class="btn btn-sm btn-outline-secondary" onclick="toggleCameras(<?= (int) $n['id'] ?>)">
         <i class="bi bi-chevron-down me-1"></i>Kameralar
       </button>
-      <div class="mt-2" id="nvr-cameras-{{ n.id }}" style="display:none;">
-        <div class="text-muted" id="nvr-cam-loading-{{ n.id }}">Yuklanmoqda...</div>
+      <div class="mt-2" id="nvr-cameras-<?= (int) $n['id'] ?>" style="display:none;">
+        <div class="text-muted" id="nvr-cam-loading-<?= (int) $n['id'] ?>">Yuklanmoqda...</div>
       </div>
     </div>
   </div>
-  {% else %}
+  <?php endforeach; else: ?>
   <div class="manage-card text-center text-muted">NVR topilmadi</div>
-  {% endfor %}
+  <?php endif; ?>
 </div>
 
-<!-- ── SUB-ADMINLAR ───────────────────────────────────────────────────── -->
+<!-- ── SUB-ADMINLAR ── -->
 <div class="tab-pane fade" id="tab-users">
   <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#modalSubAdmin">
     <i class="bi bi-person-plus me-1"></i>Yangi sub-admin
@@ -66,49 +70,50 @@
         <tr><th>Login</th><th>Ism</th><th>Filial</th><th>NVRlar</th><th>Holat</th><th></th></tr>
       </thead>
       <tbody id="subadmin-tbody">
-        {% for u in managed_users %}
-        <tr id="sa-{{ u.id }}">
-          <td class="fw-semibold">{{ u.username }}</td>
-          <td>{{ u.full_name }}</td>
+        <?php if ($managed_users): foreach ($managed_users as $u): ?>
+        <tr id="sa-<?= (int) $u['id'] ?>">
+          <td class="fw-semibold"><?= e($u['username']) ?></td>
+          <td><?= e($u['full_name']) ?></td>
           <td>
-            {% for ub in u.user_branches %}
-            <span class="badge bg-light text-dark border">{{ ub.branch.name }}</span>
-            {% endfor %}
+            <?php foreach ($u['branches'] as $ub): ?>
+            <span class="badge bg-light text-dark border"><?= e($ub['name']) ?></span>
+            <?php endforeach; ?>
           </td>
           <td>
-            {% for un in u.user_nvrs %}
-            <span class="badge bg-info text-dark">{{ un.nvr.name or un.nvr.hik_code }}</span>
-            {% else %}<small class="text-muted">Barcha</small>
-            {% endfor %}
+            <?php if ($u['nvrs']): foreach ($u['nvrs'] as $un): ?>
+            <span class="badge bg-info text-dark"><?= e($un['name'] !== '' ? $un['name'] : $un['hik_code']) ?></span>
+            <?php endforeach; else: ?>
+            <small class="text-muted">Barcha</small>
+            <?php endif; ?>
           </td>
           <td>
-            {% if u.is_active %}
+            <?php if ($u['is_active']): ?>
             <span class="badge bg-success">Faol</span>
-            {% else %}
+            <?php else: ?>
             <span class="badge bg-secondary">Bloklangan</span>
-            {% endif %}
+            <?php endif; ?>
           </td>
           <td>
-            <button class="btn btn-sm btn-outline-primary me-1" onclick="editSubAdmin({{ u.id }}, '{{ u.username }}', '{{ u.full_name }}', {{ u.is_active|int }}, [{{ u.user_nvrs|map(attribute='nvr_id')|join(',') }}])">
+            <button class="btn btn-sm btn-outline-primary me-1" onclick="editSubAdmin(<?= (int) $u['id'] ?>, '<?= e(addslashes($u['username'])) ?>', '<?= e(addslashes($u['full_name'])) ?>', <?= (int) $u['is_active'] ?>, [<?= implode(',', array_map(fn($x) => (int) $x['id'], $u['nvrs'])) ?>])">
               <i class="bi bi-pencil"></i>
             </button>
-            {% if u.id != user.id %}
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteSubAdmin({{ u.id }}, '{{ u.username }}')">
+            <?php if ((int) $u['id'] !== (int) $user['id']): ?>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteSubAdmin(<?= (int) $u['id'] ?>, '<?= e(addslashes($u['username'])) ?>')">
               <i class="bi bi-trash"></i>
             </button>
-            {% endif %}
+            <?php endif; ?>
           </td>
         </tr>
-        {% else %}
+        <?php endforeach; else: ?>
         <tr><td colspan="6" class="text-center text-muted">Sub-admin yo'q</td></tr>
-        {% endfor %}
+        <?php endif; ?>
       </tbody>
     </table>
   </div>
 </div>
 </div>
 
-<!-- ── SUB-ADMIN MODAL ────────────────────────────────────────────────── -->
+<!-- ── SUB-ADMIN MODAL ── -->
 <div class="modal fade" id="modalSubAdmin" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -139,12 +144,12 @@
               <i class="bi bi-chevron-down text-muted"></i>
             </button>
             <div class="dropdown-menu p-2" style="min-width:280px; max-height:240px; overflow:auto;">
-              {% for n in nvrs %}
+              <?php foreach ($nvrs as $n): ?>
               <div class="form-check">
-                <input class="form-check-input sa-nvr-cb" type="checkbox" value="{{ n.id }}" id="sa-n-{{ n.id }}" onchange="updateNvrLabel()">
-                <label class="form-check-label" for="sa-n-{{ n.id }}">{{ n.name or n.hik_code }} <code class="text-muted small">{{ n.ip }}</code></label>
+                <input class="form-check-input sa-nvr-cb" type="checkbox" value="<?= (int) $n['id'] ?>" id="sa-n-<?= (int) $n['id'] ?>" onchange="updateNvrLabel()">
+                <label class="form-check-label" for="sa-n-<?= (int) $n['id'] ?>"><?= e($n['name'] !== '' ? $n['name'] : $n['hik_code']) ?> <code class="text-muted small"><?= e($n['ip']) ?></code></label>
               </div>
-              {% endfor %}
+              <?php endforeach; ?>
             </div>
           </div>
         </div>
@@ -162,11 +167,12 @@
     </div>
   </div>
 </div>
-{% endblock %}
+<?php $content_html = ob_get_clean();
 
-{% block scripts %}
+ob_start(); ?>
 <script>
 const saModal = new bootstrap.Modal(document.getElementById('modalSubAdmin'));
+const ALL_BRANCH_IDS = [<?= implode(',', array_map(fn($b) => (int) $b['id'], $branches)) ?>];
 
 function saveNvrName(nvrId) {
   const name = document.getElementById(`nvr-name-${nvrId}`).value.trim();
@@ -175,7 +181,7 @@ function saveNvrName(nvrId) {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({name}),
-  }).then(r => { if (r.ok) alert('Saqlanish'); });
+  }).then(r => { if (r.ok) alert('Saqlandi'); });
 }
 
 async function toggleCameras(nvrId) {
@@ -186,7 +192,9 @@ async function toggleCameras(nvrId) {
   }
   el.style.display = 'block';
   document.getElementById(`nvr-cam-loading-${nvrId}`).textContent = 'Yuklanmoqda...';
-  const r = await fetch(`/api/cameras?branch_id={{ nvrs[0].branch_id if nvrs else '' }}`);
+  // Filial bo'yicha filtr YO'Q — backend allaqachon foydalanuvchi ko'rish
+  // doirasini qo'llaydi; bu yerda faqat NVR bo'yicha ajratamiz.
+  const r = await fetch('/api/cameras');
   const d = await r.json();
   const cams = (d.cameras || []).filter(c => c.nvr_id == nvrId);
   let html = '';
@@ -216,7 +224,6 @@ function updateNvrLabel() {
   } else { label.textContent = cbs.length + ' ta NVR tanlandi'; label.className = ''; }
 }
 
-// Sub-admin CRUD
 function editSubAdmin(id, username, fullname, isActive, nvrIds) {
   document.getElementById('sa-modal-title').textContent = 'Sub-adminni tahrirlash';
   document.getElementById('sa-id').value = id;
@@ -247,14 +254,13 @@ document.getElementById('modalSubAdmin').addEventListener('hidden.bs.modal', () 
 async function saveSubAdmin() {
   const id = document.getElementById('sa-id').value;
   const nids = [...document.querySelectorAll('.sa-nvr-cb:checked')].map(c => parseInt(c.value));
-  const branchIds = [{% for b in branches %}{{ b.id }}{% if not loop.last %},{% endif %}{% endfor %}];
   const data = {
     username: document.getElementById('sa-username').value,
     password: document.getElementById('sa-password').value,
     full_name: document.getElementById('sa-fullname').value,
     is_active: document.getElementById('sa-active').checked,
     nvr_ids: nids,
-    branch_ids: branchIds,
+    branch_ids: ALL_BRANCH_IDS,
   };
   const url = id ? `/api/manage/users/${id}` : '/api/manage/users';
   const method = id ? 'PUT' : 'POST';
@@ -270,4 +276,5 @@ async function deleteSubAdmin(id, username) {
   if (r.ok) { document.getElementById(`sa-${id}`)?.remove(); }
 }
 </script>
-{% endblock %}
+<?php $scripts_html = ob_get_clean();
+require __DIR__ . '/_layout.php';

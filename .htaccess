@@ -1,0 +1,17 @@
+# HCP Monitor — Apache URL rewriting -> index.php
+RewriteEngine On
+
+# Mavjud fayl yoki katalog bo'lsa, to'g'ridan-to'g'ri uzatamiz (static/*)
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Qolgan hammasini front controllerga
+RewriteRule ^ index.php [L]
+
+# Maxfiy fayllarga kirishni taqiqlash
+<FilesMatch "\.(php)$">
+    <If "%{REQUEST_URI} =~ m#^/(config|db|auth|helpers|hik|poller|seed|snapshot)\.php$#">
+        Require all denied
+    </If>
+</FilesMatch>
